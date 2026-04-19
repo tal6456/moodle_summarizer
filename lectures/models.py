@@ -25,4 +25,4 @@ class Summary(models.Model):
     practical_examples = models.TextField()
 
     def __str__(self):
-        return f'Summary for lecture {self.lecture_id}'
+        return f'Summary for {self.lecture}'
