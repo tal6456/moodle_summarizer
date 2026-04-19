@@ -28,22 +28,38 @@ async def login_to_moodle(page: Page, username: str, password: str) -> None:
     for _ in range(MAX_LOGIN_VERIFICATION_ATTEMPTS):
         login_state = await page.evaluate(
             """() => {
+                const hasLoginErrors = Boolean(document.querySelector('.loginerrors'));
+                const hasDangerAlert = Boolean(document.querySelector('.alert-danger'));
+                const hasErrorRelation = Boolean(document.querySelector('[data-rel="error"]'));
                 const success = Boolean(
                     document.querySelector('[data-user-id], .usermenu, a[href*="logout"]')
                 ) || !Boolean(document.querySelector('input[name="username"]'));
-                const error = Boolean(
-                    document.querySelector('.loginerrors, .alert-danger, [data-rel="error"]')
-                );
-                return { success, error };
+                let errorType = null;
+                if (hasLoginErrors) {
+                    errorType = 'credentials';
+                } else if (hasDangerAlert) {
+                    errorType = 'alert';
+                } else if (hasErrorRelation) {
+                    errorType = 'generic';
+                }
+                return { success, error: Boolean(errorType), errorType };
             }"""
         )
         if login_state["success"]:
             return
         if login_state["error"]:
-            raise RuntimeError("Moodle login failed: invalid credentials or login error displayed.")
+            if login_state["errorType"] == "credentials":
+                raise RuntimeError("Moodle login failed: invalid username or password.")
+            if login_state["errorType"] == "alert":
+                raise RuntimeError("Moodle login failed: Moodle displayed an authentication alert.")
+            raise RuntimeError("Moodle login failed: Moodle displayed a login error.")
         await page.wait_for_timeout(LOGIN_POLL_INTERVAL_MS)
 
-    raise RuntimeError("Moodle login status could not be confirmed after submission.")
+    timeout_seconds = (MAX_LOGIN_VERIFICATION_ATTEMPTS * LOGIN_POLL_INTERVAL_MS) / 1000
+    raise RuntimeError(
+        f"Moodle login status could not be confirmed after {MAX_LOGIN_VERIFICATION_ATTEMPTS} "
+        f"attempts ({timeout_seconds:.0f}s total)."
+    )
 
 
 async def get_lecture_links(page: Page, course_url: str) -> list[str]:
