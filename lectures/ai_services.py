@@ -3,13 +3,36 @@ import os
 import google.generativeai as genai
 from openai import OpenAI
 
-_OPENAI_CLIENT = OpenAI()
+_OPENAI_CLIENT = None
+_GENAI_MODEL = None
+
+
+def _get_openai_client():
+    global _OPENAI_CLIENT
+    if _OPENAI_CLIENT is None:
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            raise ValueError('OPENAI_API_KEY environment variable is not set.')
+        _OPENAI_CLIENT = OpenAI(api_key=api_key)
+    return _OPENAI_CLIENT
+
+
+def _get_genai_model():
+    global _GENAI_MODEL
+    if _GENAI_MODEL is None:
+        api_key = os.getenv('GOOGLE_API_KEY')
+        if not api_key:
+            raise ValueError('GOOGLE_API_KEY environment variable is not set.')
+        genai.configure(api_key=api_key)
+        _GENAI_MODEL = genai.GenerativeModel('gemini-1.5-flash')
+    return _GENAI_MODEL
 
 
 def transcribe_audio(file_path):
+    """Transcribe an audio file to text using OpenAI Whisper."""
     try:
         with open(file_path, 'rb') as audio_file:
-            transcript = _OPENAI_CLIENT.audio.transcriptions.create(
+            transcript = _get_openai_client().audio.transcriptions.create(
                 model='whisper-1',
                 file=audio_file,
             )
@@ -21,12 +44,7 @@ def transcribe_audio(file_path):
 
 
 def summarize_transcript(transcript_text):
-    api_key = os.getenv('GOOGLE_API_KEY')
-    if not api_key:
-        raise ValueError('GOOGLE_API_KEY environment variable is not set.')
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    """Generate a structured summary from transcript text using Gemini."""
     prompt = (
         'Summarize the following lecture transcript and extract the content into these sections:\n'
         '1. Executive Summary\n'
@@ -35,7 +53,7 @@ def summarize_transcript(transcript_text):
         f'Transcript:\n{transcript_text}'
     )
     try:
-        response = model.generate_content(prompt)
+        response = _get_genai_model().generate_content(prompt)
         return response.text
     except Exception as exc:
         raise RuntimeError('Failed to summarize transcript with Google Generative AI.') from exc
